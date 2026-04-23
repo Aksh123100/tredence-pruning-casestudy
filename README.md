@@ -16,6 +16,31 @@ Total Loss = CrossEntropyLoss + λ * Σ sigmoid(gate_scores)
 
 This drives unimportant gates toward zero during training, effectively removing those weights from the network without any post-training step.
 
+## Quickstart
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/Aksh123100/tredence-pruning-casestudy.git
+cd tredence-pruning-casestudy
+```
+
+### 2. Install dependencies
+```bash
+pip install torch torchvision matplotlib
+```
+
+### 3. Run training
+```bash
+python train.py
+```
+
+CIFAR-10 will download automatically on first run. Training sweeps over λ = [0.001, 0.01, 0.1] and prints accuracy + sparsity for each.
+
+### 4. View results
+- Printed to terminal at the end of training
+- Gate distribution plots saved to `outputs/gates_lambda_<λ>.png`
+- Full analysis in [report.md](report.md)
+
 ## Files
 
 | File | Description |
@@ -24,16 +49,4 @@ This drives unimportant gates toward zero during training, effectively removing 
 | `model.py` | Network architecture + `sparsity_loss` |
 | `train.py` | Training, evaluation, and visualization |
 | `report.md` | Analysis and results |
-
-## Run
-
-```bash
-pip install torch torchvision matplotlib
-python train.py
-```
-
-Results and gate distribution plots are saved to `outputs/`.
-
-## Results summary
-
-See [report.md](report.md) for the full analysis and λ trade-off table.
+| `outputs/` | Gate distribution plots |
