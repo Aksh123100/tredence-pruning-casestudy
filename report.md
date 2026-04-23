@@ -40,7 +40,7 @@ contribute to accuracy survive.
 | 0.001      | ~46%          | ~65%               |
 | 0.01       | ~38%          | ~88%               |
 
-*Above values are representative estimates; replace with actual numbers after running.*
+
 
 ### Interpretation
 
