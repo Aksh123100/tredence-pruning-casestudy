@@ -1,8 +1,11 @@
 
+import os
 import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+import matplotlib
+matplotlib.use('Agg')  # non-interactive backend for headless runs
 import matplotlib.pyplot as plt
 from prunable_linear import PrunableLinear
 from model import PruningNet, sparsity_loss
@@ -10,35 +13,55 @@ from model import PruningNet, sparsity_loss
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
+os.makedirs('outputs', exist_ok=True)
+
 transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize((0.5,), (0.5,))
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 
 train_set = datasets.CIFAR10('./data', train=True,  download=True, transform=transform)
 test_set  = datasets.CIFAR10('./data', train=False, download=True, transform=transform)
 
-train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
-test_loader  = DataLoader(test_set,  batch_size=64)
+train_loader = DataLoader(train_set, batch_size=256, shuffle=True,  num_workers=2, pin_memory=True)
+test_loader  = DataLoader(test_set,  batch_size=256, shuffle=False, num_workers=2, pin_memory=True)
 
 
-def train(lam, epochs=10):
+def train(lam, warmup_epochs=5, prune_epochs=20):
+    """
+    Two-phase training:
+      Phase 1 (warmup): train with lambda=0 so the network learns which weights
+        matter before sparsity kicks in.
+      Phase 2 (pruning): add sparsity penalty; CE gradient now protects important
+        weights while unimportant gates drift to 0.
+    """
     model = PruningNet().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    # gate_scores get a higher lr so they move far enough for sigmoid < 0.01
+    gate_params  = [p for n, p in model.named_parameters() if 'gate_scores' in n]
+    other_params = [p for n, p in model.named_parameters() if 'gate_scores' not in n]
+    optimizer = torch.optim.Adam([
+        {'params': other_params, 'lr': 1e-3},
+        {'params': gate_params,  'lr': 1e-1},
+    ])
     ce_loss = nn.CrossEntropyLoss()
+    total_epochs = warmup_epochs + prune_epochs
 
-    for epoch in range(epochs):
+    for epoch in range(total_epochs):
+        # Phase 1: no sparsity; Phase 2: full lambda
+        effective_lam = 0.0 if epoch < warmup_epochs else lam
+        phase = "warmup" if epoch < warmup_epochs else "pruning"
+
         model.train()
         total_loss = 0
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
             pred = model(x)
-            loss = ce_loss(pred, y) + lam * sparsity_loss(model)
+            loss = ce_loss(pred, y) + effective_lam * sparsity_loss(model)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-        print(f"  Epoch {epoch+1}/{epochs} — loss: {total_loss/len(train_loader):.4f}")
+        print(f"  [{phase}] Epoch {epoch+1}/{total_epochs} — loss: {total_loss/len(train_loader):.4f}")
 
     return model
 
@@ -78,15 +101,15 @@ def plot_gates(model, lam):
     plt.ylabel('Count')
     plt.tight_layout()
     plt.savefig(f'outputs/gates_lambda_{lam}.png')
-    plt.show()
+    plt.close()
     print(f"Plot saved to outputs/gates_lambda_{lam}.png")
 
 
 if __name__ == '__main__':
     results = []
-    for lam in [0.0001, 0.001, 0.01]:
+    for lam in [0.001, 0.01, 0.1]:
         print(f"\nTraining with lambda = {lam}")
-        model = train(lam, epochs=10)
+        model = train(lam, warmup_epochs=5, prune_epochs=20)
         acc, spar = evaluate(model)
         plot_gates(model, lam)
         results.append((lam, acc, spar))

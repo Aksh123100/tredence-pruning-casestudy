@@ -27,7 +27,7 @@ class PruningNet(nn.Module):
 def sparsity_loss(model):
     """
     L1 penalty on all gate values across all PrunableLinear layers.
-    Encourages gates to go to 0 (pruning).
+    Encourages gates to go to 0 (pruning weights).
     """
     total = 0
     for m in model.modules():
